@@ -1,0 +1,30 @@
+{
+  "name": "rls-auditor",
+  "version": "1.0.0",
+  "description": "CLI tool to audit Postgres RLS policies",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/staagatajd/rls-auditor.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/staagatajd/rls-auditor/issues"
+  },
+  "homepage": "https://github.com/staagatajd/rls-auditor#readme",
+  "dependencies": {
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  }
+}
