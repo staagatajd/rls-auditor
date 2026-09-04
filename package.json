@@ -13,12 +13,13 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/staagatajd/rls-auditor/issues"
   },
   "homepage": "https://github.com/staagatajd/rls-auditor#readme",
   "dependencies": {
+    "dotenv": "^17.4.2",
     "pg": "^8.23.0"
   },
   "devDependencies": {
