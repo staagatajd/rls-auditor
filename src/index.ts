@@ -17,10 +17,10 @@ async function main() {
     console.log("Connected to database.\n");
 
     const result = await client.query(`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-      ORDER BY table_name;
+      SELECT tablename, rowsecurity
+      FROM pg_tables
+      WHERE schemaname = 'public'
+      ORDER BY tablename;
     `);
 
     if (result.rows.length === 0) {
@@ -28,7 +28,8 @@ async function main() {
     } else {
       console.log(`Found ${result.rows.length} table(s): \n`);
       for (const row of result.rows) {
-        console.log(`  - ${row.table_name}`);
+        const status = row.rowsecurity ? "RLS ENABLED" : "RLS DISABLED";
+        console.log(`  - ${row.tablename}: ${status}`);
       }
     }
   } catch (err) {
