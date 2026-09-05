@@ -16,19 +16,43 @@ async function main() {
     await client.connect();
     console.log("Connected to database.\n");
 
-    const result = await client.query(`
+    const tableresult = await client.query(`
       SELECT tablename, rowsecurity
       FROM pg_tables
       WHERE schemaname = 'public'
       ORDER BY tablename;
     `);
 
-    if (result.rows.length === 0) {
+    const policiesresult = await client.query(`
+      SELECT tablename, COUNT(*) AS policy_count
+      FROM pg_policies
+      WHERE schemaname = 'public'
+      GROUP BY tablename;
+    `);
+
+    const policyCounts = new Map<string, number>();
+    for (const row of policiesresult.rows) {
+      policyCounts.set(row.tablename, parseInt(row.policy_count, 10));
+    }
+
+    if (tableresult.rows.length === 0) {
       console.log("No tables found in the 'public' schema.");
     } else {
-      console.log(`Found ${result.rows.length} table(s): \n`);
-      for (const row of result.rows) {
-        const status = row.rowsecurity ? "RLS ENABLED" : "RLS DISABLED";
+      console.log(`Found ${tableresult.rows.length} table(s): \n`);
+      for (const row of tableresult.rows) {
+        const count = policyCounts.get(row.tablename) ?? 0;
+
+        let status: string;
+
+        if (!row.rowsecurity) {
+          status = "RLS DISABLED";
+        } else if (count === 0) {
+          status =
+            "RLS enabled, 0 policies — WARNING: table is locked, nothing can access it";
+        } else {
+          status = `RLS enabled, ${count} polic${count === 1 ? "y" : "ies"}`;
+        }
+
         console.log(`  - ${row.tablename}: ${status}`);
       }
     }
