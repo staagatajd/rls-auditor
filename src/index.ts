@@ -1,6 +1,11 @@
 import "dotenv/config";
 import { Client } from "pg";
 
+function isPermissive(expr: string | null): boolean {
+  if (expr === null) return false;
+  return expr.trim().toLowerCase() === "true";
+}
+
 async function main() {
   const connectionString = process.env.DATABASE_URL;
 
@@ -24,15 +29,16 @@ async function main() {
     `);
 
     const policiesresult = await client.query(`
-      SELECT tablename, COUNT(*) AS policy_count
+      SELECT tablename, policyname, cmd, qual, with_check
       FROM pg_policies
-      WHERE schemaname = 'public'
-      GROUP BY tablename;
+      WHERE schemaname = 'public';
     `);
 
-    const policyCounts = new Map<string, number>();
+    const policiesByTable = new Map<string, typeof policiesresult.rows>();
     for (const row of policiesresult.rows) {
-      policyCounts.set(row.tablename, parseInt(row.policy_count, 10));
+      const existing = policiesByTable.get(row.tablename) ?? [];
+      existing.push(row);
+      policiesByTable.set(row.tablename, existing);
     }
 
     if (tableresult.rows.length === 0) {
@@ -40,7 +46,8 @@ async function main() {
     } else {
       console.log(`Found ${tableresult.rows.length} table(s): \n`);
       for (const row of tableresult.rows) {
-        const count = policyCounts.get(row.tablename) ?? 0;
+        const policies = policiesByTable.get(row.tablename) ?? [];
+        const count = policies.length;
 
         let status: string;
 
@@ -54,6 +61,14 @@ async function main() {
         }
 
         console.log(`  - ${row.tablename}: ${status}`);
+
+        for (const policy of policies) {
+          if (isPermissive(policy.qual) || isPermissive(policy.with_check)) {
+            console.log(
+              `      ⚠ Policy "${policy.policyname}" (${policy.cmd}) is overly permissive (USING true) — provides no real protection`
+            );
+          }
+        }
       }
     }
   } catch (err) {
