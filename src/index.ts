@@ -6,6 +6,14 @@ function isPermissive(expr: string | null): boolean {
   return expr.trim().toLowerCase() === "true";
 }
 
+function hasUnrestrictedRole(roles: string[]): boolean {
+  return roles.includes("public") || roles.includes("anon");
+}
+
+function parseRoles(rolesRaw: string): string[] {
+  return rolesRaw.replace(/^\{|\}$/g, "").split(",");
+}
+
 async function main() {
   const connectionString = process.env.DATABASE_URL;
 
@@ -29,7 +37,7 @@ async function main() {
     `);
 
     const policiesresult = await client.query(`
-      SELECT tablename, policyname, cmd, qual, with_check
+      SELECT tablename, policyname, cmd, qual, with_check, roles
       FROM pg_policies
       WHERE schemaname = 'public';
     `);
@@ -65,7 +73,13 @@ async function main() {
         for (const policy of policies) {
           if (isPermissive(policy.qual) || isPermissive(policy.with_check)) {
             console.log(
-              `      ⚠ Policy "${policy.policyname}" (${policy.cmd}) is overly permissive (USING true) — provides no real protection`
+              `      ⚠ Policy "${policy.policyname}" (${policy.cmd}) is overly permissive (USING true) — provides no real protection`,
+            );
+          }
+
+          if (hasUnrestrictedRole(parseRoles(policy.roles))) {
+            console.log(
+              `      ⚠ Policy "${policy.policyname}" (${policy.cmd}) applies to unauthenticated role(s) [${parseRoles(policy.roles).join(", ")}] — check if this should be restricted to 'authenticated'`,
             );
           }
         }
