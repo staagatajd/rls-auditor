@@ -14,6 +14,14 @@ function parseRoles(rolesRaw: string): string[] {
   return rolesRaw.replace(/^\{|\}$/g, "").split(",");
 }
 
+function getMissingOperations(policies: { cmd: string }[]): string[] {
+  const allOps = ["SELECT", "INSERT", "UPDATE", "DELETE"];
+  const covered = new Set(
+    policies.map((p) => (p.cmd === "ALL" ? allOps : [p.cmd])).flat(),
+  );
+  return allOps.filter((op) => !covered.has(op));
+}
+
 async function main() {
   const connectionString = process.env.DATABASE_URL;
 
@@ -66,6 +74,15 @@ async function main() {
             "RLS enabled, 0 policies — WARNING: table is locked, nothing can access it";
         } else {
           status = `RLS enabled, ${count} polic${count === 1 ? "y" : "ies"}`;
+        }
+
+        if (row.rowsecurity && count > 0) {
+          const missing = getMissingOperations(policies);
+          if (missing.length > 0) {
+            console.log(
+              `      ℹ No policy covers: ${missing.join(", ")} — these operations are denied by default (may be intentional)`,
+            );
+          }
         }
 
         console.log(`  - ${row.tablename}: ${status}`);
