@@ -37,6 +37,9 @@ async function main() {
     await client.connect();
     console.log("Connected to database.\n");
 
+    const failOnWarning = process.argv.includes("--fail-on-warning");
+    let hasWarnings = false;
+
     const tableresult = await client.query(`
       SELECT tablename, rowsecurity
       FROM pg_tables
@@ -108,17 +111,26 @@ async function main() {
 
         for (const policy of policies) {
           if (isPermissive(policy.qual) || isPermissive(policy.with_check)) {
+            hasWarnings = true;
             console.log(
               `      ⚠ Policy "${policy.policyname}" (${policy.cmd}) is overly permissive (USING true) — provides no real protection`,
             );
           }
 
           if (hasUnrestrictedRole(parseRoles(policy.roles))) {
+            hasWarnings = true;
             console.log(
               `      ⚠ Policy "${policy.policyname}" (${policy.cmd}) applies to unauthenticated role(s) [${parseRoles(policy.roles).join(", ")}] — check if this should be restricted to 'authenticated'`,
             );
           }
         }
+      }
+
+      if (failOnWarning && hasWarnings) {
+        console.log(
+          "\nFailing build: warnings found and --fail-on-warning was set.",
+        );
+        process.exit(1);
       }
     }
   } catch (err) {
