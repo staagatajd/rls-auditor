@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import "dotenv/config";
 import { Client } from "pg";
 import type { TableResult } from "./TableResult.js";
