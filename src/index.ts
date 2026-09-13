@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { Client } from "pg";
+import type { TableResult } from "./TableResult.js";
 
 function isPermissive(expr: string | null): boolean {
   if (expr === null) return false;
@@ -35,9 +36,9 @@ async function main() {
 
   try {
     await client.connect();
-    console.log("Connected to database.\n");
 
     const failOnWarning = process.argv.includes("--fail-on-warning");
+    const jsonOutput = process.argv.includes("--json");
     let hasWarnings = false;
 
     const tableresult = await client.query(`
@@ -72,66 +73,95 @@ async function main() {
       policiesByTable.set(row.tablename, existing);
     }
 
-    if (tableresult.rows.length === 0) {
-      console.log("No tables found in the 'public' schema.");
-    } else {
-      console.log(`Found ${tableresult.rows.length} table(s): \n`);
-      for (const row of tableresult.rows) {
-        const policies = policiesByTable.get(row.tablename) ?? [];
-        const count = policies.length;
+    const results: TableResult[] = [];
 
-        let status: string;
+    for (const row of tableresult.rows) {
+      const policies = policiesByTable.get(row.tablename) ?? [];
+      const count = policies.length;
 
-        if (!row.rowsecurity) {
-          status = "RLS DISABLED";
-        } else if (count === 0) {
-          status =
-            "RLS enabled, 0 policies — WARNING: table is locked, nothing can access it";
-        } else {
-          status = `RLS enabled, ${count} polic${count === 1 ? "y" : "ies"}`;
+      const result: TableResult = {
+        tablename: row.tablename,
+        rlsEnabled: row.rowsecurity,
+        policyCount: count,
+        warnings: [],
+        notes: [],
+      };
+
+      if (row.rowsecurity && count === 0) {
+        result.warnings.push(
+          "RLS enabled with 0 policies — table is locked, nothing can access it",
+        );
+        hasWarnings = true;
+      }
+
+      if (row.rowsecurity && count > 0) {
+        const missing = getMissingOperations(policies);
+        if (missing.length > 0) {
+          result.notes.push(
+            `No policy covers: ${missing.join(", ")} — these operations are denied by default (may be intentional)`,
+          );
         }
 
-        if (row.rowsecurity && count > 0) {
-          const missing = getMissingOperations(policies);
-          if (missing.length > 0) {
-            console.log(
-              `      ℹ No policy covers: ${missing.join(", ")} — these operations are denied by default (may be intentional)`,
-            );
-          }
-
-          const forced = forceRlsByTable.get(row.tablename) ?? false;
-          if (!forced) {
-            console.log(
-              `      ℹ FORCE ROW LEVEL SECURITY is off — the table owner can bypass all policies on this table`,
-            );
-          }
-        }
-
-        console.log(`  - ${row.tablename}: ${status}`);
-
-        for (const policy of policies) {
-          if (isPermissive(policy.qual) || isPermissive(policy.with_check)) {
-            hasWarnings = true;
-            console.log(
-              `      ⚠ Policy "${policy.policyname}" (${policy.cmd}) is overly permissive (USING true) — provides no real protection`,
-            );
-          }
-
-          if (hasUnrestrictedRole(parseRoles(policy.roles))) {
-            hasWarnings = true;
-            console.log(
-              `      ⚠ Policy "${policy.policyname}" (${policy.cmd}) applies to unauthenticated role(s) [${parseRoles(policy.roles).join(", ")}] — check if this should be restricted to 'authenticated'`,
-            );
-          }
+        const forced = forceRlsByTable.get(row.tablename) ?? false;
+        if (!forced) {
+          result.notes.push(
+            "FORCE ROW LEVEL SECURITY is off — the table owner can bypass all policies on this table",
+          );
         }
       }
 
-      if (failOnWarning && hasWarnings) {
+      for (const policy of policies) {
+        if (isPermissive(policy.qual) || isPermissive(policy.with_check)) {
+          result.warnings.push(
+            `Policy "${policy.policyname}" (${policy.cmd}) is overly permissive (USING true) — provides no real protection`,
+          );
+          hasWarnings = true;
+        }
+
+        if (hasUnrestrictedRole(parseRoles(policy.roles))) {
+          result.warnings.push(
+            `Policy "${policy.policyname}" (${policy.cmd}) applies to unauthenticated role(s) [${parseRoles(policy.roles).join(", ")}] — check if this should be restricted to 'authenticated'`,
+          );
+          hasWarnings = true;
+        }
+      }
+
+      results.push(result);
+    }
+
+    if (jsonOutput) {
+      console.log(JSON.stringify(results, null, 2));
+    } else {
+      console.log("Connected to database.\n");
+      if (results.length === 0) {
+        console.log("No tables found in the 'public' schema.");
+      } else {
+        console.log(`Found ${results.length} table(s):\n`);
+        for (const r of results) {
+          const status = !r.rlsEnabled
+            ? "RLS DISABLED"
+            : `RLS enabled, ${r.policyCount} polic${r.policyCount === 1 ? "y" : "ies"}`;
+
+          for (const note of r.notes) {
+            console.log(`      ℹ ${note}`);
+          }
+
+          console.log(`  - ${r.tablename}: ${status}`);
+
+          for (const warning of r.warnings) {
+            console.log(`      ⚠ ${warning}`);
+          }
+        }
+      }
+    }
+
+    if (failOnWarning && hasWarnings) {
+      if (!jsonOutput) {
         console.log(
           "\nFailing build: warnings found and --fail-on-warning was set.",
         );
-        process.exit(1);
       }
+      process.exit(1);
     }
   } catch (err) {
     console.error("Error connecting to database or running query");
