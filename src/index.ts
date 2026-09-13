@@ -50,6 +50,18 @@ async function main() {
       WHERE schemaname = 'public';
     `);
 
+    const forceRlsResult = await client.query(`
+      SELECT relname AS tablename, relforcerowsecurity
+      FROM pg_class
+      WHERE relnamespace = 'public'::regnamespace
+      AND relkind = 'r';
+    `);
+
+    const forceRlsByTable = new Map<string, boolean>();
+    for (const row of forceRlsResult.rows) {
+      forceRlsByTable.set(row.tablename, row.relforcerowsecurity);
+    }
+
     const policiesByTable = new Map<string, typeof policiesresult.rows>();
     for (const row of policiesresult.rows) {
       const existing = policiesByTable.get(row.tablename) ?? [];
@@ -81,6 +93,13 @@ async function main() {
           if (missing.length > 0) {
             console.log(
               `      ℹ No policy covers: ${missing.join(", ")} — these operations are denied by default (may be intentional)`,
+            );
+          }
+
+          const forced = forceRlsByTable.get(row.tablename) ?? false;
+          if (!forced) {
+            console.log(
+              `      ℹ FORCE ROW LEVEL SECURITY is off — the table owner can bypass all policies on this table`,
             );
           }
         }
